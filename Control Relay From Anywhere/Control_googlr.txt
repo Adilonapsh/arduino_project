@@ -1,0 +1,102 @@
+#include <ESP8266WiFi.h>
+#include "Adafruit_MQTT.h"
+#include "Adafruit_MQTT_Client.h"
+
+#define WLAN_SSID       "YOUR_SSID"
+#define WLAN_PASS       "YOUR_PASSWORD"
+
+#define AIO_SERVER      "io.adafruit.com"
+#define AIO_SERVERPORT  1883                   // use 8883 for SSL
+#define IO_USERNAME  "adilonapsh"
+#define IO_KEY       "YOUR_ADAFRUIT_KEY"
+
+WiFiClient client;
+// or... use WiFiFlientSecure for SSL
+//WiFiClientSecure client;
+
+Adafruit_MQTT_Client mqtt(&client, AIO_SERVER, AIO_SERVERPORT, IO_USERNAME, IO_KEY);
+Adafruit_MQTT_Publish photocell = Adafruit_MQTT_Publish(&mqtt, IO_USERNAME "/feeds/photocell");
+
+Adafruit_MQTT_Subscribe Kontroll_Relay = Adafruit_MQTT_Subscribe(&mqtt, IO_USERNAME "/feeds/kontrol-relay");
+
+void MQTT_connect();
+
+#define pin_relay 2
+String Data;
+
+void setup() {
+  Serial.begin(115200);
+  delay(10);
+
+  Serial.println(F("Kontrol Relay Google Assisten"));
+
+  // Connect to WiFi access point.
+  Serial.println(); Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(WLAN_SSID);
+
+  WiFi.begin(WLAN_SSID, WLAN_PASS);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+
+  Serial.println("WiFi connected");
+  Serial.println("IP address: "); Serial.println(WiFi.localIP());
+
+  // Setup MQTT subscription for onoff feed.
+  mqtt.subscribe(&Kontroll_Relay);
+  pinMode (pin_relay, OUTPUT);
+  digitalWrite (pin_relay, 1); 
+}
+
+uint32_t x=0;
+
+void loop() {
+   MQTT_connect();
+
+  // this is our 'wait for incoming subscription packets' busy subloop
+  // try to spend your time here
+
+  Adafruit_MQTT_Subscribe *subscription;
+  while ((subscription = mqtt.readSubscription(5000))) {
+    if (subscription == &Kontroll_Relay) {
+      Data = (char *)Kontroll_Relay.lastread;
+      Serial.println(Data);
+      if (Data == "OFF"){
+        digitalWrite (pin_relay, 1);
+      }
+      else if (Data == "ON"){
+        digitalWrite(pin_relay, 0);
+      }
+    }
+  }
+}
+
+// Function to connect and reconnect as necessary to the MQTT server.
+// Should be called in the loop function and it will take care if connecting.
+void MQTT_connect() {
+  int8_t ret;
+
+  // Stop if already connected.
+  if (mqtt.connected()) {
+    return;
+  }
+
+  Serial.print("Connecting to MQTT... ");
+
+  uint8_t retries = 3;
+  while ((ret = mqtt.connect()) != 0) { // connect will return 0 for connected
+       Serial.println(mqtt.connectErrorString(ret));
+       Serial.println("Retrying MQTT connection in 5 seconds...");
+       mqtt.disconnect();
+       delay(5000);  // wait 5 seconds
+       retries--;
+       if (retries == 0) {
+         // basically die and wait for WDT to reset me
+         while (1);
+       }
+  }
+  Serial.println("MQTT Connected!");
+}
